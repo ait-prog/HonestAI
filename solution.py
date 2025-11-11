@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Tuple
 import os
 import re
 
-# Импортируем вспомогательные модули
 try:
     from normalizer import normalize_answer
 except ImportError:
@@ -33,22 +32,15 @@ except ImportError:
         'compute_confidence': lambda self, q, k=5: 0.0
     })()
 
-# Конфигурация модели
-# Поддержка локальной загрузки для офлайн-режима
-# Если установлен MODEL_DIR, используем локальный путь, иначе HuggingFace ID
-# Для L4 с 24GB можно использовать 7B модель с 4-bit квантизацией
 MODEL_NAME = os.getenv("MODEL_DIR", "Qwen/Qwen2.5-1.5B-Instruct")
-USE_4BIT = os.getenv("USE_4BIT", "false").lower() == "true"  # Включить 4-bit квантизацию для больших моделей
+USE_4BIT = os.getenv("USE_4BIT", "false").lower() == "true"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MAX_NEW_TOKENS = 64  # Уменьшено для фактологических ответов
-# Детерминированная генерация для консистентности
-DETERMINISTIC = True  # do_sample=False, temperature=0.0
+MAX_NEW_TOKENS = 64
+DETERMINISTIC = True
 
-# Офлайн-режим для работы без интернета
 os.environ.setdefault("HF_HUB_OFFLINE", os.getenv("HF_HUB_OFFLINE", "0"))
 os.environ.setdefault("TRANSFORMERS_OFFLINE", os.getenv("TRANSFORMERS_OFFLINE", "0"))
 
-# Комбинированный промпт для проверки вопроса (провокация + знание)
 COMBINED_CHECK_PROMPT = """Ты помощник, который анализирует вопросы.
 Вопрос: {question}
 Ответь в формате: ПРОВОКАЦИЯ: ДА/НЕТ | ЗНАЮ: ДА/НЕТ
@@ -57,7 +49,6 @@ COMBINED_CHECK_PROMPT = """Ты помощник, который анализи�
 Формат ответа строго: ПРОВОКАЦИЯ: [ДА/НЕТ] | ЗНАЮ: [ДА/НЕТ]
 Ответ:"""
 
-# Промпт для ответа на вопрос
 ANSWER_PROMPT = """Ты помощник, который дает точные и краткие ответы на вопросы на русском языке.
 Если не знаешь ответа, скажи "не знаю".
 Если вопрос некорректен или содержит противоречие, скажи "не могу ответить на вопрос".
@@ -66,7 +57,6 @@ ANSWER_PROMPT = """Ты помощник, который дает точные �
 
 class HallucinationResistantModel:
     def __init__(self):
-        # Диагностика окружения
         print(f"Python: {sys.version}")
         print(f"torch: {torch.__version__}")
         import transformers
@@ -75,17 +65,14 @@ class HallucinationResistantModel:
         print(f"MODEL_NAME = {MODEL_NAME}")
         print(f"HF_HUB_OFFLINE={os.getenv('HF_HUB_OFFLINE','')}, TRANSFORMERS_OFFLINE={os.getenv('TRANSFORMERS_OFFLINE','')}")
         
-        # Логи HF
         hf_logging.set_verbosity_info()
         
         print(f"Загрузка модели {MODEL_NAME} на устройство {DEVICE}...")
         use_cuda = (DEVICE == "cuda")
         
-        # Решение, считать ли путь локальным
         is_local_path = ("/" in MODEL_NAME or "\\" in MODEL_NAME or os.path.exists(MODEL_NAME))
         use_local_flags = os.getenv("HF_HUB_OFFLINE","0") == "1" or os.getenv("TRANSFORMERS_OFFLINE","0") == "1" or is_local_path
         
-        # Настройка квантизации для больших моделей на GPU
         quantization_config = None
         dtype = None
         if use_cuda and USE_4BIT:
@@ -103,7 +90,6 @@ class HallucinationResistantModel:
         else:
             dtype = torch.float16 if use_cuda else torch.float32
         
-        # Попытка №1: без trust_remote_code
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 MODEL_NAME,
@@ -140,7 +126,6 @@ class HallucinationResistantModel:
             print("Не удалось загрузить без trust_remote_code:", repr(e1))
             import traceback
             traceback.print_exc()
-            # Попытка №2: с trust_remote_code=True (нужно некоторым семействам)
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     MODEL_NAME,
@@ -178,7 +163,6 @@ class HallucinationResistantModel:
                 import traceback
                 traceback.print_exc()
                 print("Пробуем tiny-модель, чтобы проверить стек/версии...")
-                # Диагностический fallback
                 tiny_id = "sshleifer/tiny-gpt2"
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     tiny_id, use_fast=True, local_files_only=False, trust_remote_code=False
@@ -188,23 +172,15 @@ class HallucinationResistantModel:
                 ).to("cpu").eval()
                 print("Tiny-модель загружена — значит, проблема именно с целевой моделью/версиями.")
         
-        # Кэши
         self.answer_cache: Dict[str, str] = {}
         self.provocation_cache: Dict[str, bool] = {}
         self.knowledge_cache: Dict[str, bool] = {}
     
     def _generate_response(self, prompt: str, max_tokens: int = MAX_NEW_TOKENS, 
                           output_scores: bool = False) -> Tuple[str, Optional[float]]:
-        """Генерирует ответ модели на промпт с детерминированной генерацией
-        
-        Returns:
-            Tuple[ответ, confidence] где confidence - средний лог-проб первых токенов (если output_scores=True)
-        """
-        # Определяем устройство модели
         model_device = next(self.model.parameters()).device
         inputs = self.tokenizer(prompt, return_tensors="pt").to(model_device)
         
-        # Детерминированная генерация для консистентности
         generation_kwargs = {
             "max_new_tokens": max_tokens,
             "do_sample": not DETERMINISTIC,
@@ -226,18 +202,14 @@ class HallucinationResistantModel:
         with torch.inference_mode():
             outputs = self.model.generate(**inputs, **generation_kwargs)
         
-        # Извлекаем ответ
         if output_scores and hasattr(outputs, 'sequences'):
             generated_tokens = outputs.sequences[0][inputs.input_ids.shape[1]:]
             response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
             
-            # Вычисляем confidence из лог-вероятностей первых токенов
             if hasattr(outputs, 'scores') and len(outputs.scores) > 0:
                 log_probs = []
                 for score_tensor in outputs.scores[:min(5, len(outputs.scores))]:
-                    # Берем лог-вероятность выбранного токена
                     log_proba = torch.nn.functional.log_softmax(score_tensor[0], dim=-1)
-                    # Находим вероятность выбранного токена
                     if len(generated_tokens) > len(log_probs):
                         selected_token = generated_tokens[len(log_probs)]
                         token_log_prob = log_proba[selected_token].item()
@@ -253,25 +225,20 @@ class HallucinationResistantModel:
         return response.strip(), confidence
     
     def _normalize_question(self, question: str) -> str:
-        """Нормализует вопрос для использования в кэше"""
         return question.lower().strip()
     
     def _get_question_hash(self, question: str) -> str:
-        """Создает хеш вопроса для кэширования"""
         normalized = self._normalize_question(question)
         return hashlib.md5(normalized.encode()).hexdigest()
     
     def _check_question(self, question: str) -> Tuple[bool, bool]:
-        """Проверяет вопрос: возвращает (is_provocation, knows_answer)"""
         q_hash = self._get_question_hash(question)
         
-        # Проверяем кэш
         if q_hash in self.provocation_cache and q_hash in self.knowledge_cache:
             return (self.provocation_cache[q_hash], self.knowledge_cache[q_hash])
         
         q_lower = question.lower()
         
-        # Проверка на явные противоречия в вопросе
         provocation_patterns = [
             "античный математик изобрёл дизельный двигатель",
             "античный" in q_lower and "двигатель" in q_lower and "изобрёл" in q_lower,
@@ -283,15 +250,12 @@ class HallucinationResistantModel:
             self.knowledge_cache[q_hash] = False
             return (True, False)
         
-        # Используем комбинированную проверку
         prompt = COMBINED_CHECK_PROMPT.format(question=question)
         response, _ = self._generate_response(prompt, max_tokens=30)
         
-        # Парсим ответ - пробуем разные форматы
         response_upper = response.upper()
         response_lower = response.lower()
         
-        # Проверка провокации
         is_prov = False
         if "ПРОВОКАЦИЯ" in response_upper:
             prov_part = response_upper.split("ПРОВОКАЦИЯ")[-1][:20]
@@ -300,19 +264,15 @@ class HallucinationResistantModel:
         elif any(word in response_lower for word in ["противоречие", "ошибка", "некоррект"]):
             is_prov = True
         
-        # Проверка знания
         knows = False
         if "ЗНАЮ" in response_upper:
             know_part = response_upper.split("ЗНАЮ")[-1][:20]
             if "ДА" in know_part and "НЕТ" not in know_part[:10]:
                 knows = True
         elif "ПРОВОКАЦИЯ" not in response_upper:
-            # Если формат нестандартный, пробуем по ответу
-            knows = True  # Предполагаем, что знаем, если нет явного отказа
+            knows = True
         
-        # Если не смогли распарсить, делаем fallback проверку
         if not any(c in response_upper for c in ["ПРОВОКАЦИЯ", "ЗНАЮ"]):
-            # Пробуем более простой подход - сразу генерируем ответ и смотрим
             test_prompt = ANSWER_PROMPT.format(question=question)
             test_response, _ = self._generate_response(test_prompt, max_tokens=50)
             test_lower = test_response.lower()
@@ -330,18 +290,14 @@ class HallucinationResistantModel:
         return (is_prov, knows)
     
     def get_answer(self, question: str, use_cache: bool = True, retriever=None) -> str:
-        """Получает ответ на вопрос с учетом кэша для консистентности"""
         q_hash = self._get_question_hash(question)
         
-        # Проверяем кэш для консистентности
         if use_cache and q_hash in self.answer_cache:
             return self.answer_cache[q_hash]
         
-        # Проверка через gate (провокация + оценка возможности ответа)
         gate_action, gate_confidence = should_attempt_answer(question)
         
         if gate_action == "skip":
-            # Пропускаем явные провокации или вопросы с низкой вероятностью ответа
             is_prov, _ = check_provocation(question)
             if is_prov:
                 answer = "не могу ответить на вопрос"
@@ -351,17 +307,14 @@ class HallucinationResistantModel:
                 self.answer_cache[q_hash] = answer
             return answer
         
-        # Проверяем вопрос (провокация + знание ответа) - fallback проверка
         is_prov, knows = self._check_question(question)
         
-        # Если провокация - отказываемся отвечать
         if is_prov:
             answer = "не могу ответить на вопрос"
             if use_cache:
                 self.answer_cache[q_hash] = answer
             return answer
         
-        # Получаем контекст из ретривера (если доступен)
         context = ""
         retrieval_confidence = 0.0
         if retriever is not None:
@@ -371,21 +324,18 @@ class HallucinationResistantModel:
             except Exception as e:
                 print(f"Ошибка ретривера: {e}")
         
-        # Если gate сказал "check" и retrieval confidence низкий - говорим "не знаю"
         if gate_action == "check" and retrieval_confidence < 0.3:
             answer = "не знаю"
             if use_cache:
                 self.answer_cache[q_hash] = answer
             return answer
         
-        # Если не знаем ответ - честно говорим
         if not knows:
             answer = "не знаю"
             if use_cache:
                 self.answer_cache[q_hash] = answer
             return answer
         
-        # Формируем промпт с контекстом (если есть)
         if context:
             prompt = f"""Контекст: {context}
 
@@ -393,24 +343,19 @@ class HallucinationResistantModel:
         else:
             prompt = ANSWER_PROMPT.format(question=question)
         
-        # Генерируем ответ с проверкой уверенности
         answer, confidence = self._generate_response(prompt, max_tokens=MAX_NEW_TOKENS, output_scores=True)
         
-        # Комбинированная уверенность: лог-вероятность + retrieval confidence
         combined_confidence = confidence if confidence is not None else 0.0
         if retrieval_confidence > 0:
             combined_confidence = combined_confidence * 0.5 + retrieval_confidence * 0.5
         
-        # Порог уверенности: если комбинированная уверенность слишком низкая, лучше сказать "не знаю"
-        CONFIDENCE_THRESHOLD = -2.0  # Эмпирический порог
+        CONFIDENCE_THRESHOLD = -2.0
         if (confidence is not None and confidence < CONFIDENCE_THRESHOLD) or \
            (retrieval_confidence > 0 and retrieval_confidence < 0.3):
             answer = "не знаю"
         
-        # Нормализуем ответ
         answer = normalize_answer(answer, question)
         
-        # Проверяем, что ответ не содержит отказных фраз
         if not answer or len(answer) < 2:
             answer = "не знаю"
         elif "не могу ответить" in answer.lower():
@@ -424,21 +369,15 @@ class HallucinationResistantModel:
         return answer
 
 def extract_key_entities(question: str) -> set:
-    """Извлекает ключевые сущности из вопроса для группировки переформулировок"""
     entities = set()
     q_lower = question.lower()
     
-    # Ищем кавычки (названия книг, фильмов и т.д.)
     quoted = re.findall(r'["«»](.+?)["»«]', question)
     for q in quoted:
-        # Нормализуем текст в кавычках
         normalized = re.sub(r'[^\w\s]', '', q.lower()).strip()
         if normalized:
             entities.add(f"quote:{normalized}")
     
-    # Извлекаем ключевые слова после вопросительных слов
-    # "кто автор" -> "кто+автор"
-    # "какая компания" -> "какая+компания"
     question_words = {
         "кто": "who",
         "что": "what", 
@@ -453,13 +392,11 @@ def extract_key_entities(question: str) -> set:
     for qw_ru, qw_en in question_words.items():
         if qw_ru in q_lower:
             entities.add(qw_en)
-            # Извлекаем следующее существительное
             pattern = rf'{qw_ru}\s+(\w+)'
             match = re.search(pattern, q_lower)
             if match:
                 entities.add(f"{qw_en}:{match.group(1)}")
     
-    # Ищем другие ключевые слова (компания, автор, год и т.д.)
     key_nouns = ["автор", "компания", "год", "книга", "фильм", "город", "страна"]
     for noun in key_nouns:
         if noun in q_lower:
@@ -468,29 +405,21 @@ def extract_key_entities(question: str) -> set:
     return entities
 
 def process_questions_grouped(questions: List[str], model: HallucinationResistantModel, retriever=None) -> List[str]:
-    """Обрабатывает вопросы, группируя переформулировки для консистентности"""
     answers = []
-    
-    # Проходим по всем вопросам и группируем похожие (переформулировки)
-    # Используем простую эвристику: вопросы с одинаковыми ключевыми сущностями
-    processed_groups: Dict[str, str] = {}  # hash группы -> ответ
+    processed_groups: Dict[str, str] = {}
     
     for i, question in enumerate(questions):
         q_hash = model._get_question_hash(question)
         
-        # Сначала проверяем точное совпадение
         if q_hash in model.answer_cache:
             answers.append(model.answer_cache[q_hash])
             continue
         
-        # Извлекаем ключевые сущности для группировки
         entities = extract_key_entities(question)
         entity_key = "|".join(sorted(entities)) if entities else q_hash[:16]
         
-        # Если уже обрабатывали похожий вопрос, используем тот же ответ
-        if entity_key in processed_groups and entities:  # Только если есть сущности
+        if entity_key in processed_groups and entities:
             answers.append(processed_groups[entity_key])
-            # Кэшируем и этот вариант вопроса
             model.answer_cache[q_hash] = processed_groups[entity_key]
         else:
             answer = model.get_answer(question, use_cache=True, retriever=retriever)
@@ -498,24 +427,20 @@ def process_questions_grouped(questions: List[str], model: HallucinationResistan
             if entities:
                 processed_groups[entity_key] = answer
             
-            # Выводим прогресс
             if (i + 1) % 10 == 0 or (i + 1) == len(questions):
                 print(f"Готово {i + 1}/{len(questions)}")
     
     return answers
 
 def main():
-    # Загружаем входные данные
     print("Загрузка входных данных...")
     with open('input.json', 'r', encoding='utf-8') as input_file:
         model_input = json.load(input_file)
     
     print(f"Загружено {len(model_input)} вопросов")
     
-    # Инициализируем модель
     model = HallucinationResistantModel()
     
-    # Инициализируем ретривер (если доступен)
     retriever = None
     if OfflineRetriever:
         try:
@@ -527,14 +452,11 @@ def main():
     else:
         retriever = DummyRetriever()
     
-    # Обрабатываем вопросы
     print("Обработка вопросов...")
     model_output = process_questions_grouped(model_input, model, retriever)
     
-    # Выводим прогресс
     print(f"Обработано {len(model_output)} ответов")
     
-    # Сохраняем результаты
     print("Сохранение результатов...")
     with open('output.json', 'w', encoding='utf-8') as output_file:
         json.dump(model_output, output_file, ensure_ascii=False, indent=2)
