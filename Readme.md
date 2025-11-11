@@ -1,6 +1,22 @@
 # HonestAI
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-orange.svg)
+![Transformers](https://img.shields.io/badge/Transformers-4.44.2+-green.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
 
 Система ответов на вопросы с защитой от галлюцинаций на основе языковых моделей.
+
+## Технологии
+
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
+![HuggingFace](https://img.shields.io/badge/-HuggingFace-FFD21E?style=flat-square&logo=huggingface&logoColor=black)
+![FAISS](https://img.shields.io/badge/-FAISS-005C84?style=flat-square&logo=facebook&logoColor=white)
+![Docker](https://img.shields.io/badge/-Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![CUDA](https://img.shields.io/badge/-CUDA-76B900?style=flat-square&logo=nvidia&logoColor=white)
+![NumPy](https://img.shields.io/badge/-NumPy-013243?style=flat-square&logo=numpy&logoColor=white)
+![SentenceTransformers](https://img.shields.io/badge/-SentenceTransformers-FF6B6B?style=flat-square)
+![BitsAndBytes](https://img.shields.io/badge/-BitsAndBytes-000000?style=flat-square)
 
 ## Описание
 
@@ -201,7 +217,24 @@ HonestAI/
 
 # HonestAI
 
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0-orange.svg)
+![Transformers](https://img.shields.io/badge/Transformers-4.44.2+-green.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)
+
 Question-answering system with hallucination resistance based on language models.
+
+## Technologies
+
+![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/-PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
+![HuggingFace](https://img.shields.io/badge/-HuggingFace-FFD21E?style=flat-square&logo=huggingface&logoColor=black)
+![FAISS](https://img.shields.io/badge/-FAISS-005C84?style=flat-square&logo=facebook&logoColor=white)
+![Docker](https://img.shields.io/badge/-Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![CUDA](https://img.shields.io/badge/-CUDA-76B900?style=flat-square&logo=nvidia&logoColor=white)
+![NumPy](https://img.shields.io/badge/-NumPy-013243?style=flat-square&logo=numpy&logoColor=white)
+![SentenceTransformers](https://img.shields.io/badge/-SentenceTransformers-FF6B6B?style=flat-square)
+![BitsAndBytes](https://img.shields.io/badge/-BitsAndBytes-000000?style=flat-square)
 
 ## Description
 
@@ -397,3 +430,4 @@ HonestAI/
 - CUDA (optional, for GPU)
 - 8GB+ RAM (for models without quantization)
 - 4GB+ RAM (with 4-bit quantization)
+
